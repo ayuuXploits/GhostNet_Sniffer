@@ -99,15 +99,17 @@ Open a web browser and go to:
 http://192.168.4.1
 The radar interface will load. Walk around – devices will appear as moving dots.
 ```
-🖥️ Web Interface
+---
+## 🖥️ Web Interface
 
-Element	Description
+**Element	Description**
+
 Radar canvas	Animated sweep with concentric circles. Each dot represents a detected device; its distance from center = estimated distance in meters (capped at 10 m).
 Device list	Shows MAC address, distance (meters), angle (pseudo‑angle from MAC hash), and a signal strength bar.
 Real‑time updates	Data refreshes every second via WebSocket.
 (Screenshot placeholder)
-
-⚙️ Configuration Options
+---
+## ⚙️ Configuration Options
 
 Inside wifi_radar.ino, you can adjust:
 
