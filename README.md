@@ -91,7 +91,7 @@ Click the Upload button. Wait for Done uploading in the console.
 ```
 ### 6. Connect to the radar
 
-** On your phone or laptop, join the Wi‑Fi network:
+**On your phone or laptop, join the Wi‑Fi network:**
 ```
 SSID: ESP32-WiFi-Radar
 Password: radar12345
