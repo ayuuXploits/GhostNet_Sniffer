@@ -1,0 +1,77 @@
+# GhostNet_Sniffer - ESP32 Wi-Fi Radar
+# Arduino IDE build leftovers
+*.ino.cpp
+*.ino.elf
+*.ino.bin
+*.ino.partitions.bin
+*.ino.bootloader.bin
+*.ino.with_bootloader.bin
+*.ino.eeprom
+*.ino.flash
+*.ino.elf.sym
+
+# Compiled object files
+*.a
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.out
+
+# Arduino temporary folder (auto-generated)
+__tmp_*
+
+# PlatformIO (if ever used)
+.pio/
+.pioenvs/
+.piolibdeps/
+.sconsign.dblite
+
+# VS Code (with Arduino extension)
+.vscode/
+*.code-workspace
+
+# CLion / JetBrains
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.*.swp
+.*.swo
+
+# Serial logs and debug output
+*.log
+*.serial
+*.txt
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Sensitive configuration (if you ever add WiFi creds)
+secrets.h
+private_config.h
+
+# Personal notes / scratch
+notes.txt
+scratch/
+test/
+
+# Build directories (if you manually create)
+build/
+output/
