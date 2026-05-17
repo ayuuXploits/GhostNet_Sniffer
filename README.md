@@ -108,7 +108,7 @@ Radar canvas	Animated sweep with concentric circles. Each dot represents a detec
 Device list	Shows MAC address, distance (meters), angle (pseudo‑angle from MAC hash), and a signal strength bar.
 Real‑time updates	Data refreshes every second via WebSocket.
 (Screenshot placeholder)
----
+
 ## ⚙️ Configuration Options
 
 Inside wifi_radar.ino, you can adjust:
