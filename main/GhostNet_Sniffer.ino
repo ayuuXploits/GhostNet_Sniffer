@@ -301,7 +301,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
 // ----------------------------------------------------------------------
 //  User configurable settings
 // ----------------------------------------------------------------------
-const char* ssid = "ESP32-WiFi-Radar";   // Name of the ESP32's own AP
+const char* ssid = "GhostNet_Sniffer";   // Name of the ESP32's own AP
 const char* password = "radar12345";      // Password for that AP
 const int channel = 6;                    // 2.4 GHz channel to sniff (1-11)
 
