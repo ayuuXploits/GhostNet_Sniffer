@@ -67,3 +67,64 @@ Install the following libraries via the **Arduino Library Manager** (Sketch → 
 ```bash
 git clone https://github.com/yourusername/esp32-wifi-radar.git
 cd esp32-wifi-radar
+```
+### 2. Open the sketch in Arduino IDE
+```
+Open wifi_radar.ino.
+```
+### 3. Configure the Wi‑Fi channel
+```
+** Find which 2.4 GHz channel your router is using (e.g., with a Wi‑Fi analyzer app).
+Modify this line near the top of the sketch:
+
+cpp
+const int channel = 6;   // Change to your router's channel (1-11)
+```
+### 4. Select board and port
+```
+Tools → Board → ESP32 Dev Module (or your specific model)
+Tools → Port → select your ESP32’s serial port
+```
+### 5. Upload
+```
+Click the Upload button. Wait for Done uploading in the console.
+```
+### 6. Connect to the radar
+
+** On your phone or laptop, join the Wi‑Fi network:
+```
+SSID: ESP32-WiFi-Radar
+Password: radar12345
+Open a web browser and go to:
+http://192.168.4.1
+The radar interface will load. Walk around – devices will appear as moving dots.
+```
+🖥️ Web Interface
+
+Element	Description
+Radar canvas	Animated sweep with concentric circles. Each dot represents a detected device; its distance from center = estimated distance in meters (capped at 10 m).
+Device list	Shows MAC address, distance (meters), angle (pseudo‑angle from MAC hash), and a signal strength bar.
+Real‑time updates	Data refreshes every second via WebSocket.
+(Screenshot placeholder)
+
+⚙️ Configuration Options
+
+Inside wifi_radar.ino, you can adjust:
+
+cpp
+const char* ssid = "ESP32-WiFi-Radar";    // AP name
+const char* password = "radar12345";      // AP password
+const int channel = 6;                    // Sniffer channel (1-11)
+const int MAX_DISTANCE = 10;              // Maximum display distance (meters)
+Change AP credentials – customise SSID/password if desired.
+Increase range – raise MAX_DISTANCE, but note RSSI‑to‑distance becomes unreliable beyond ~15 m.
+Update frequency – change delay(1000); in loop() (lower = faster updates, but more overhead).
+🧪 How It Works (Technical Summary)
+
+Promiscuous mode – The ESP32’s Wi‑Fi controller captures every 802.11 packet in the air on the chosen channel, regardless of destination.
+Packet parsing – Extracts the transmitter MAC address (addr2) and RSSI from the radio control header.
+Device tracking – A simple database stores each MAC, its latest RSSI, and a timestamp. Devices unseen for 10 seconds are dropped from the display.
+Distance estimation – Uses a free‑space path loss model:
+distance = exp(( -RSSI - 45 ) / 20). This is a rough approximation – walls and interference affect accuracy.
+Angle simulation – The visual angle is a hash of the MAC address, so each device appears at a stable (but arbitrary) angle. Real angle‑of‑arrival would require multiple antennas or CSI data.
+Web dashboard – The ESP32 runs an asynchronous web server + WebSocket. Every second it serialises the device list to JSON and pushes it to all connected clients. The browser draws the radar.
