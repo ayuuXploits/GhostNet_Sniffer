@@ -8,8 +8,6 @@ Detects nearby 2.4 GHz Wi‑Fi devices, estimates their distance, and visualiz
 
 **Passive Wi‑Fi radar that haunts the airwaves – detect hidden devices and motion using just an ESP32.**
 
-> **⚠️ Proprietary Software – All Rights Reserved**  
-> This source code and its associated documentation are the exclusive property of the author. You may view the code for reference, but you are not granted any rights to copy, modify, distribute, or create derivative works without explicit written permission.
 
 ---
 
