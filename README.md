@@ -65,12 +65,12 @@ Install the following libraries via the **Arduino Library Manager** (Sketch → 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/esp32-wifi-radar.git
-cd esp32-wifi-radar
+git clone https://github.com/ayuuXploits/GhostNet_Sniffer.git
+cd GhostNet_Sniffer
 ```
 ### 2. Open the sketch in Arduino IDE
 ```
-Open wifi_radar.ino.
+Open GhostNet_Sniffer.ino.
 ```
 ### 3. Configure the Wi‑Fi channel
 ```
@@ -93,7 +93,7 @@ Click the Upload button. Wait for Done uploading in the console.
 
 **On your phone or laptop, join the Wi‑Fi network:**
 ```
-SSID: ESP32-WiFi-Radar
+SSID: GhostNet_Sniffer
 Password: radar12345
 Open a web browser and go to:
 http://192.168.4.1
@@ -111,10 +111,10 @@ Real‑time updates	Data refreshes every second via WebSocket.
 
 ## ⚙️ Configuration Options
 
-Inside wifi_radar.ino, you can adjust:
+Inside GhostNet_Sniffer.ino, you can adjust:
 ```
 cpp
-const char* ssid = "ESP32-WiFi-Radar";    // AP name
+const char* ssid = "GhostNet_Sniffer";    // AP name
 const char* password = "radar12345";      // AP password
 const int channel = 6;                    // Sniffer channel (1-11)
 const int MAX_DISTANCE = 10;              // Maximum display distance (meters)
