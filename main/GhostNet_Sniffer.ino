@@ -1,7 +1,7 @@
 /**
- * ESP32 Wi-Fi Radar
+ * based on ESP32 dev module
  * 
- * Copyright (c) 2025 [Your Name]
+ * Copyright (c) 2026 [ayuuXploits]
  * 
  * All rights reserved.
  * 
