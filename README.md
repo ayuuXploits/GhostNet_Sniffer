@@ -125,11 +125,35 @@ Update frequency – change delay(1000); in loop() (lower = faster updates, but 
 ___
 ## 🧪 How It Works (Technical Summary)
 
-Promiscuous mode – The ESP32’s Wi‑Fi controller captures every 802.11 packet in the air on the chosen channel, regardless of destination.
-Packet parsing – Extracts the transmitter MAC address (addr2) and RSSI from the radio control header.
-Device tracking – A simple database stores each MAC, its latest RSSI, and a timestamp. Devices unseen for 10 seconds are dropped from the display.
-Distance estimation – Uses a free‑space path loss model:
+**Promiscuous mode** – The ESP32’s Wi‑Fi controller captures every 802.11 packet in the air on the chosen channel, regardless of destination.
+**Packet parsing** – Extracts the transmitter MAC address (addr2) and RSSI from the radio control header.
+**Device tracking** – A simple database stores each MAC, its latest RSSI, and a timestamp. Devices unseen for 10 seconds are dropped from the display.
+**Distance estimation** – Uses a free‑space path loss model:
 distance = exp(( -RSSI - 45 ) / 20). This is a rough approximation – walls and interference affect accuracy.
-Angle simulation – The visual angle is a hash of the MAC address, so each device appears at a stable (but arbitrary) angle. Real angle‑of‑arrival would require multiple antennas or CSI data.
-Web dashboard – The ESP32 runs an asynchronous web server + WebSocket. Every second it serialises the device list to JSON and pushes it to all connected clients. The browser draws the radar.
+**Angle simulation** – The visual angle is a hash of the MAC address, so each device appears at a stable (but arbitrary) angle. Real angle‑of‑arrival would require multiple antennas or CSI data.
+### Web dashboard – The ESP32 runs an asynchronous web server + WebSocket. Every second it serialises the device list to JSON and pushes it to all connected clients. The browser draws the radar.
 ___
+
+
+## 📜 License & Copyright
+
+Copyright © 2026 [ayuuXploits]. All rights reserved.
+
+This software is provided “as is”, without warranty of any kind, express or implied.
+You may not copy, modify, sublicense, or distribute this software without explicit written permission from the author.
+
+For permission inquiries, please contact the author.
+
+## 🤝 Acknowledgements
+
+ESP32 promiscuous mode API – Espressif Systems
+AsyncTCP & ESPAsyncWebServer – me‑no‑dev
+Radar UI design inspired by classic PPI displays
+📬 Contact
+
+## For support, questions, or licensing inquiries, please open an issue on this repository (if public) or contact the maintainer directly.
+```
+Maintainer:[ayuuXploits]
+Project Repository: https://github.com/ayuuXploits/GhostNet_Sniffer
+```
+
