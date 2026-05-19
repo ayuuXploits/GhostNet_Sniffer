@@ -175,7 +175,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     </div>
     
     <footer>
-      ESP32 Wi-Fi Sensing Technology | Active Channel: 6
+      ESP32 Wi-Fi Sensing Technology | Active Channel: 6 | &#9888; Angle is estimated (RSSI-only hardware)
     </footer>
   </div>
 
@@ -272,7 +272,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
         deviceElement.className = 'device-card';
         deviceElement.innerHTML = `
           <h3>${device.mac}</h3>
-          <p>Distance: ${device.distance.toFixed(1)}m | Angle: ${device.angle}°</p>
+          <p>Distance: ${device.distance.toFixed(1)}m | Angle: ${device.angle}&deg;</p>
           <div class="signal-bar">
             <div class="signal-level" style="width: ${device.strength}%"></div>
           </div>
@@ -354,16 +354,29 @@ void addOrUpdateDevice(uint8_t* mac, int8_t rssi) {
   }
 }
 
-// "Angle" is a visual gimmick – derived from MAC so it's stable per device.
+// ----------------------------------------------------------------------
+//  FNV-1a hash for uniform angle distribution across 360 degrees.
+//  Replaces the old byte-sum approach which caused device clustering.
+// ----------------------------------------------------------------------
 uint16_t hashMacToAngle(const uint8_t* mac) {
-  uint16_t sum = 0;
-  for (int i = 0; i < 6; i++) sum += mac[i];
-  return sum % 360;
+  uint32_t hash = 2166136261u;   // FNV-1a offset basis
+  for (int i = 0; i < 6; i++) {
+    hash ^= mac[i];
+    hash *= 16777619u;           // FNV-1a prime
+  }
+  return (uint16_t)(hash % 360);
 }
 
+// ----------------------------------------------------------------------
+//  Build JSON payload; includes angle collision avoidance so devices
+//  don't overlap on the radar display (nudges by 15-degree steps).
+// ----------------------------------------------------------------------
 String generateDeviceJSON() {
   DynamicJsonDocument doc(1024);
   JsonArray devicesArray = doc.createNestedArray("devices");
+
+  // Track which degree slots are already occupied this frame
+  bool usedAngles[360] = {false};
 
   for (int i = 0; i < deviceCount; i++) {
     if (millis() - devices[i].lastSeen < 10000) {   // only devices seen in last 10s
@@ -380,7 +393,18 @@ String generateDeviceJSON() {
       if (distance > MAX_DISTANCE) distance = MAX_DISTANCE;
       device["distance"] = distance;
 
-      device["angle"] = hashMacToAngle(devices[i].mac);
+      // Resolve angle collision: nudge by 15-degree steps if slot is taken
+      uint16_t angle = hashMacToAngle(devices[i].mac);
+      for (int step = 0; step < 24; step++) {
+        uint16_t candidate = (angle + step * 15) % 360;
+        if (!usedAngles[candidate]) {
+          angle = candidate;
+          break;
+        }
+      }
+      usedAngles[angle] = true;
+
+      device["angle"] = angle;
       device["strength"] = constrain(map(devices[i].rssi, -95, -35, 0, 100), 0, 100);
     }
   }
