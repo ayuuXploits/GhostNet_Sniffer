@@ -80,6 +80,7 @@ Modify this line near the top of the sketch:
 
 cpp
 const int channel = 6;   // Change to your router's channel (1-11)
+
 ```
 ### 4. Select board and port
 ```
