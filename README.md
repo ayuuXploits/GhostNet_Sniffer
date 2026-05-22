@@ -4,6 +4,12 @@
 [![Arduino Compatible](https://img.shields.io/badge/Arduino-IDE-2.x-orange)](https://www.arduino.cc/)
 [![ArduinoJson](https://img.shields.io/badge/ArduinoJson-v7-green)](https://arduinojson.org/)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red)](#-license--copyright)
+<br/>
+
+<img src="./docs/g1.png" width="48%" /> &nbsp; <img src="./docs/g2.png" width="48%" />
+<img src="./docs/vitatrack3.png" width="48%" /> &nbsp; <img src="./docs/vitatrack4.png" width="48%" />
+
+</div>
 
 ![web preview](docs/g1.png)
 ![smartphone preview](docs/g2.png)
