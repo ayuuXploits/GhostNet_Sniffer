@@ -102,8 +102,16 @@ Install the following via **Sketch → Include Library → Manage Libraries…**
 ```
 GhostNet_Sniffer/
  ├── main/
-      ├── GhostNet_Sniffer.ino   # Main firmware — setup, loop, sniffer callback, JSON builder
-      └── html_page.h            # Embedded HTML/CSS/JS dashboard (included at compile time)
+ │    ├── GhostNet_Sniffer.ino   # Main firmware — setup, loop, sniffer callback, JSON builder
+ │    └── html_page.h            # Embedded HTML/CSS/JS dashboard (included at compile time)
+ ├── docs/
+ │    ├── g1.png
+ │    └── g2.png
+ ├── .gitihnore
+ ├── LICENSE
+ └── README.md
+
+
 ```
 
 > The folder name **must match** the `.ino` filename exactly. Arduino IDE requires this.  
