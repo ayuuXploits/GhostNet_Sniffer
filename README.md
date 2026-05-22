@@ -2,8 +2,8 @@
 
 [![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32-blue)](https://www.espressif.com/en/products/socs/esp32)
 [![Arduino Compatible](https://img.shields.io/badge/Arduino-IDE-orange)](https://www.arduino.cc/)
-![web preview](main/GhostNet_Sniffer1.png)
-![smartphone preview](main/GhostNet_Sniffer.png)
+![web preview](docs/GhostNet_Sniffer1.png)
+![smartphone preview](docs/GhostNet_Sniffer.png)
 **Passive Wi‑Fi sensing radar using an ESP32 in promiscuous mode.**  
 Detects nearby 2.4 GHz Wi‑Fi devices, estimates their distance, and visualizes them in real time on a web‑based radar dashboard.
 
