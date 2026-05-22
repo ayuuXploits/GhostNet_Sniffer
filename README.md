@@ -5,8 +5,8 @@
 [![ArduinoJson](https://img.shields.io/badge/ArduinoJson-v7-green)](https://arduinojson.org/)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red)](#-license--copyright)
 
-![web preview](docs/G1.png)
-![smartphone preview](docs/G2.png)
+![web preview](docs/g1.png)
+![smartphone preview](docs/g2.png)
 
 **Passive Wi-Fi sensing radar using an ESP32 in promiscuous mode.**  
 Detects nearby 2.4 GHz Wi-Fi devices, estimates their distance, and visualizes them in real time on a web-based radar dashboard — no external network required.
