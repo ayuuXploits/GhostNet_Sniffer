@@ -20,19 +20,34 @@
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <esp_wifi.h>
+#include <freertos/semphr.h>
 #include <math.h>
+#include <string.h>
 
-// ----------------------------------------------------------------------
-//  Packet structure definitions (needed for promiscuous mode parsing)
-// ----------------------------------------------------------------------
+// ============================================================
+//  USER CONFIG
+// ============================================================
+const char*   AP_SSID       = "GhostNet_Radar";
+const char*   AP_PASS       = "radar12345";
+const uint8_t HOP_MIN_CH    = 1;
+const uint8_t HOP_MAX_CH    = 13;
+const uint32_t HOP_DWELL_MS = 150;    // ms per channel
+const int8_t  DEFAULT_RSSI_FILTER = -95;  // ignore weaker than this
+const float   TX_POWER_REF  = -59.0f; // RSSI at 1m (calibrate for your env)
+const float   PATH_LOSS_N   = 2.7f;   // 2=free-space, 2.7=typical indoor
+const float   MAX_DISTANCE  = 15.0f;  // metres, clamping limit
+const uint32_t DEVICE_TIMEOUT_MS = 30000; // remove device after 30s silence
+
+// ============================================================
+//  IEEE 802.11 structs
+// ============================================================
 typedef struct {
   uint16_t frame_ctrl;
-  uint8_t duration_id[2];
-  uint8_t addr1[6];
-  uint8_t addr2[6];
-  uint8_t addr3[6];
+  uint8_t  duration_id[2];
+  uint8_t  addr1[6];
+  uint8_t  addr2[6];
+  uint8_t  addr3[6];
   uint16_t sequence_ctrl;
-  uint8_t addr4[6];
 } wifi_ieee80211_mac_hdr_t;
 
 typedef struct {
@@ -40,435 +55,395 @@ typedef struct {
   uint8_t payload[0];
 } wifi_ieee80211_packet_t;
 
-// ----------------------------------------------------------------------
-//  HTML + JavaScript for the radar dashboard
-//  (embedded as a raw string literal)
-// ----------------------------------------------------------------------
-const char HTML_PAGE[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>ESP32 Wi-Fi Radar</title>
-  <style>
-    :root {
-      --primary: #0f0c29;
-      --secondary: #302b63;
-      --accent: #00c9ff;
-      --text: #e6f1ff;
-    }
-    
-    body {
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
-      color: var(--text);
-      font-family: 'Segoe UI', sans-serif;
-      margin: 0;
-      padding: 20px;
-      height: 100vh;
-      overflow: hidden;
-    }
-    
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-    }
-    
-    header {
-      text-align: center;
-      padding: 20px 0;
-    }
-    
-    h1 {
-      font-size: 2.5rem;
-      margin: 0;
-      background: linear-gradient(90deg, var(--accent), #92fe9d);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      text-shadow: 0 0 15px rgba(0,201,255,0.3);
-    }
-    
-    .dashboard {
-      display: flex;
-      flex: 1;
-      gap: 30px;
-    }
-    
-    .radar-container {
-      flex: 3;
-      background: rgba(0,0,0,0.2);
-      border-radius: 20px;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.1);
-      overflow: hidden;
-      position: relative;
-    }
-    
-    #radar {
-      width: 100%;
-      height: 100%;
-    }
-    
-    .device-list {
-      flex: 1;
-      background: rgba(0,0,0,0.2);
-      border-radius: 20px;
-      padding: 20px;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.1);
-      overflow-y: auto;
-    }
-    
-    .device-card {
-      background: rgba(255,255,255,0.05);
-      border-radius: 10px;
-      padding: 15px;
-      margin-bottom: 15px;
-      animation: fadeIn 0.5s;
-    }
-    
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    
-    .signal-bar {
-      height: 5px;
-      background: rgba(255,255,255,0.1);
-      border-radius: 3px;
-      margin-top: 10px;
-      overflow: hidden;
-    }
-    
-    .signal-level {
-      height: 100%;
-      background: linear-gradient(90deg, #00c9ff, #92fe9d);
-      border-radius: 3px;
-    }
-    
-    footer {
-      text-align: center;
-      padding: 20px;
-      font-size: 0.8rem;
-      color: rgba(255,255,255,0.5);
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <h1>ESP32 Wi-Fi Radar</h1>
-      <p>Real-time environment mapping using Wi-Fi signals</p>
-    </header>
-    
-    <div class="dashboard">
-      <div class="radar-container">
-        <canvas id="radar"></canvas>
-      </div>
-      
-      <div class="device-list" id="deviceList">
-        <h2>Detected Devices</h2>
-        <div id="devices"></div>
-      </div>
-    </div>
-    
-    <footer>
-      ESP32 Wi-Fi Sensing Technology | Active Channel: 6 | &#9888; Angle is estimated (RSSI-only hardware)
-    </footer>
-  </div>
+// Frame control type/subtype helpers
+#define FC_TYPE(fc)    (((fc) >> 2) & 0x3)
+#define FC_SUBTYPE(fc) (((fc) >> 4) & 0xF)
+#define FTYPE_MGMT     0
+#define FTYPE_DATA     2
+#define STYPE_DEAUTH   12
+#define STYPE_PROBE_REQ 4
 
-  <script>
-    const radar = document.getElementById('radar');
-    const ctx = radar.getContext('2d');
-    const deviceContainer = document.getElementById('devices');
-    
-    function resizeCanvas() {
-      radar.width = radar.offsetWidth;
-      radar.height = radar.offsetHeight;
-      drawRadarBackground();
-    }
-    
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-    
-    function drawRadarBackground() {
-      const width = radar.width;
-      const height = radar.height;
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const radius = Math.min(centerX, centerY) * 0.9;
-      
-      ctx.clearRect(0, 0, width, height);
-      
-      // Concentric circles
-      ctx.strokeStyle = 'rgba(0, 201, 255, 0.2)';
-      ctx.lineWidth = 1;
-      for(let i = 1; i <= 5; i++) {
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius * i/5, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      
-      // Crosshairs
-      ctx.beginPath();
-      ctx.moveTo(centerX, 0);
-      ctx.lineTo(centerX, height);
-      ctx.moveTo(0, centerY);
-      ctx.lineTo(width, centerY);
-      ctx.stroke();
-      
-      // Sweep line
-      const sweepAngle = (Date.now() / 30) % 360;
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.lineTo(
-        centerX + radius * Math.cos((sweepAngle - 90) * Math.PI / 180),
-        centerY + radius * Math.sin((sweepAngle - 90) * Math.PI / 180)
-      );
-      ctx.strokeStyle = 'rgba(0, 255, 100, 0.7)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    
-    function drawDevices(devices) {
-      const width = radar.width;
-      const height = radar.height;
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const radius = Math.min(centerX, centerY) * 0.9;
-      
-      ctx.clearRect(0, 0, width, height);
-      drawRadarBackground();
-      
-      devices.forEach(device => {
-        const angle = device.angle * Math.PI / 180;
-        const distance = radius * (device.distance / 10);
-        const x = centerX + distance * Math.cos(angle - Math.PI/2);
-        const y = centerY + distance * Math.sin(angle - Math.PI/2);
-        
-        ctx.beginPath();
-        ctx.arc(x, y, 8, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(146, 254, 157, ${device.strength/100})`;
-        ctx.fill();
-        
-        ctx.beginPath();
-        ctx.arc(x, y, 15 * (1 + Math.sin(Date.now()/200)/2), 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0, 201, 255, 0.3)`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      });
-    }
-    
-    function updateDeviceList(devices) {
-      deviceContainer.innerHTML = '';
-      if(devices.length === 0) {
-        deviceContainer.innerHTML = '<div class="device-card">No devices detected</div>';
-        return;
-      }
-      devices.forEach(device => {
-        const deviceElement = document.createElement('div');
-        deviceElement.className = 'device-card';
-        deviceElement.innerHTML = `
-          <h3>${device.mac}</h3>
-          <p>Distance: ${device.distance.toFixed(1)}m | Angle: ${device.angle}&deg;</p>
-          <div class="signal-bar">
-            <div class="signal-level" style="width: ${device.strength}%"></div>
-          </div>
-        `;
-        deviceContainer.appendChild(deviceElement);
-      });
-    }
-    
-    const ws = new WebSocket('ws://' + window.location.hostname + '/ws');
-    ws.onmessage = function(event) {
-      const data = JSON.parse(event.data);
-      drawDevices(data.devices);
-      updateDeviceList(data.devices);
-    };
-    
-    function animate() {
-      drawRadarBackground();
-      requestAnimationFrame(animate);
-    }
-    animate();
-  </script>
-</body>
-</html>
-)rawliteral";
-
-// ----------------------------------------------------------------------
-//  User configurable settings
-// ----------------------------------------------------------------------
-const char* ssid = "GhostNet_Sniffer";   // Name of the ESP32's own AP
-const char* password = "radar12345";      // Password for that AP
-const int channel = 6;                    // 2.4 GHz channel to sniff (1-11)
-
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
-
-// ----------------------------------------------------------------------
-//  Device database
-// ----------------------------------------------------------------------
-#define MAX_DEVICES 20
-struct WiFiDevice {
-  uint8_t mac[6];
-  int8_t rssi;
-  unsigned long lastSeen;
+// ============================================================
+//  OUI table  (add more as needed)
+// ============================================================
+struct OuiEntry { uint8_t oui[3]; const char* vendor; const char* icon; };
+static const OuiEntry OUI_TABLE[] = {
+  {{0x00,0x17,0xF2}, "Apple",    "[Apple]"},
+  {{0xAC,0xDE,0x48}, "Apple",    "[Apple]"},
+  {{0xF8,0x1E,0xDF}, "Apple",    "[Apple]"},
+  {{0x3C,0x22,0xFB}, "Apple",    "[Apple]"},
+  {{0xB8,0x27,0xEB}, "Raspberry","[RPi]"},
+  {{0xDC,0xA6,0x32}, "Raspberry","[RPi]"},
+  {{0xE4,0x5F,0x01}, "Raspberry","[RPi]"},
+  {{0x00,0x0C,0xE7}, "Samsung",  "[Mobile]"},
+  {{0x8C,0xF5,0xA3}, "Samsung",  "[Mobile]"},
+  {{0xCC,0xB2,0x55}, "Samsung",  "[Mobile]"},
+  {{0x00,0x1A,0x11}, "Google",   "[Google]"},
+  {{0xF4,0xF5,0xDB}, "Google",   "[Google]"},
+  {{0x54,0x60,0x09}, "Xiaomi",   "[Mobile]"},
+  {{0xD4,0x97,0x0B}, "Xiaomi",   "[Mobile]"},
+  {{0x78,0x02,0xF8}, "Realtek",  "[PC]"},
+  {{0x00,0x50,0xF2}, "Microsoft","[PC]"},
+  {{0x00,0x0D,0x3A}, "Microsoft","[PC]"},
+  {{0x00,0x13,0x10}, "Cisco",    "[Net]"},
+  {{0x00,0x1E,0xBD}, "Cisco",    "[Net]"},
+  {{0x00,0x25,0x9C}, "Cisco",    "[Net]"},
+  {{0x18,0xB4,0x30}, "Nest",     "[IoT]"},
+  {{0x64,0x16,0x66}, "Amazon",   "[Amazon]"},
+  {{0x68,0x37,0xE9}, "Amazon",   "[Amazon]"},
+  {{0xFC,0x65,0xDE}, "TP-Link",  "[Net]"},
+  {{0xB0,0x4E,0x26}, "TP-Link",  "[Net]"},
 };
-WiFiDevice devices[MAX_DEVICES];
-int deviceCount = 0;
+static const int OUI_COUNT = sizeof(OUI_TABLE) / sizeof(OUI_TABLE[0]);
 
-const int MAX_DISTANCE = 10;   // meters (clamping limit)
-
-// ----------------------------------------------------------------------
-//  Setup: create AP, start promiscuous mode, attach packet handler
-// ----------------------------------------------------------------------
-void initWiFi() {
-  WiFi.softAP(ssid, password, channel);
-  Serial.println("Access Point Started");
-  Serial.print("SSID: ");
-  Serial.println(ssid);
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.softAPIP());
-
-  esp_wifi_set_promiscuous(true);
-  esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
-  esp_wifi_set_max_tx_power(84);   // max = 20 dBm
+const char* lookupVendor(const uint8_t* mac) {
+  for (int i = 0; i < OUI_COUNT; i++)
+    if (memcmp(mac, OUI_TABLE[i].oui, 3) == 0) return OUI_TABLE[i].vendor;
+  return "Unknown";
+}
+const char* lookupIcon(const uint8_t* mac) {
+  for (int i = 0; i < OUI_COUNT; i++)
+    if (memcmp(mac, OUI_TABLE[i].oui, 3) == 0) return OUI_TABLE[i].icon;
+  return "[?]";
 }
 
-void addOrUpdateDevice(uint8_t* mac, int8_t rssi) {
+// ============================================================
+//  Device table
+// ============================================================
+#define MAX_DEVICES  30
+#define RSSI_HISTORY 30
+
+struct WiFiDevice {
+  uint8_t  mac[6];
+  int8_t   rssi;
+  int8_t   rssiHistory[RSSI_HISTORY];
+  uint8_t  historyLen;
+  uint8_t  historyIdx;
+  char     ssid[33];      // from probe requests
+  bool     hasSSID;
+  bool     deauthSeen;
+  unsigned long lastSeen;
+  unsigned long firstSeen;
+  uint32_t packetCount;
+};
+
+static WiFiDevice  devices[MAX_DEVICES];
+static int         deviceCount = 0;
+static SemaphoreHandle_t deviceMutex;
+static volatile int8_t rssiFilter = DEFAULT_RSSI_FILTER;
+
+// ============================================================
+//  Channel hopping state
+// ============================================================
+static volatile uint8_t currentChannel = HOP_MIN_CH;
+static unsigned long lastHop = 0;
+
+// ============================================================
+//  Alert ring buffer (deauth / new device events)
+// ============================================================
+#define MAX_ALERTS 10
+struct Alert { char msg[80]; unsigned long ts; };
+static Alert  alerts[MAX_ALERTS];
+static uint8_t alertHead = 0, alertCount = 0;
+static SemaphoreHandle_t alertMutex;
+
+void pushAlert(const char* msg) {
+  xSemaphoreTake(alertMutex, portMAX_DELAY);
+  snprintf(alerts[alertHead].msg, 80, "%s", msg);
+  alerts[alertHead].ts = millis();
+  alertHead = (alertHead + 1) % MAX_ALERTS;
+  if (alertCount < MAX_ALERTS) alertCount++;
+  xSemaphoreGive(alertMutex);
+}
+
+// ============================================================
+//  Internal helpers (called only from sniffer callback)
+// ============================================================
+static void addOrUpdateDevice_ISR(const uint8_t* mac, int8_t rssi,
+                                   const char* ssid, bool isDeauth) {
+  unsigned long now = millis();
+  // search existing
   for (int i = 0; i < deviceCount; i++) {
     if (memcmp(devices[i].mac, mac, 6) == 0) {
       devices[i].rssi = rssi;
-      devices[i].lastSeen = millis();
+      devices[i].rssiHistory[devices[i].historyIdx] = rssi;
+      devices[i].historyIdx = (devices[i].historyIdx + 1) % RSSI_HISTORY;
+      if (devices[i].historyLen < RSSI_HISTORY) devices[i].historyLen++;
+      devices[i].lastSeen = now;
+      devices[i].packetCount++;
+      if (isDeauth && !devices[i].deauthSeen) {
+        devices[i].deauthSeen = true;
+        char buf[80];
+        snprintf(buf, 80, "[!] Deauth from %02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+        pushAlert(buf);
+      }
+      if (ssid && ssid[0] && !devices[i].hasSSID) {
+        strncpy(devices[i].ssid, ssid, 32);
+        devices[i].hasSSID = true;
+      }
       return;
     }
   }
-  if (deviceCount < MAX_DEVICES) {
-    memcpy(devices[deviceCount].mac, mac, 6);
-    devices[deviceCount].rssi = rssi;
-    devices[deviceCount].lastSeen = millis();
+  // new device - find slot (LRU eviction if full)
+  int slot = deviceCount < MAX_DEVICES ? deviceCount : -1;
+  if (slot == -1) {
+    unsigned long oldest = ULONG_MAX;
+    for (int i = 0; i < MAX_DEVICES; i++) {
+      if (devices[i].lastSeen < oldest) { oldest = devices[i].lastSeen; slot = i; }
+    }
+  } else {
     deviceCount++;
   }
+  memcpy(devices[slot].mac, mac, 6);
+  devices[slot].rssi = rssi;
+  memset(devices[slot].rssiHistory, rssi, RSSI_HISTORY);
+  devices[slot].historyLen = 1;
+  devices[slot].historyIdx = 1;
+  devices[slot].rssiHistory[0] = rssi;
+  devices[slot].hasSSID   = false;
+  devices[slot].ssid[0]   = '\0';
+  devices[slot].deauthSeen = isDeauth;
+  devices[slot].lastSeen  = now;
+  devices[slot].firstSeen = now;
+  devices[slot].packetCount = 1;
+  if (ssid && ssid[0]) { strncpy(devices[slot].ssid, ssid, 32); devices[slot].hasSSID = true; }
+
+  char buf[80];
+  snprintf(buf, 80, "[+] New device: %02X:%02X:%02X:%02X:%02X:%02X (%s)",
+           mac[0],mac[1],mac[2],mac[3],mac[4],mac[5], lookupVendor(mac));
+  pushAlert(buf);
 }
 
-// ----------------------------------------------------------------------
-//  FNV-1a hash for uniform angle distribution across 360 degrees.
-//  Replaces the old byte-sum approach which caused device clustering.
-// ----------------------------------------------------------------------
-uint16_t hashMacToAngle(const uint8_t* mac) {
-  uint32_t hash = 2166136261u;   // FNV-1a offset basis
-  for (int i = 0; i < 6; i++) {
-    hash ^= mac[i];
-    hash *= 16777619u;           // FNV-1a prime
+// ============================================================
+//  Promiscuous callback - plain C function, IRAM_ATTR
+// ============================================================
+static void IRAM_ATTR snifferCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
+  if (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA && type != WIFI_PKT_MISC) return;
+
+  const wifi_promiscuous_pkt_t* ppkt = (const wifi_promiscuous_pkt_t*)buf;
+  if (ppkt->rx_ctrl.sig_len < (int)sizeof(wifi_ieee80211_mac_hdr_t)) return;
+
+  const wifi_ieee80211_packet_t* pkt = (const wifi_ieee80211_packet_t*)ppkt->payload;
+  const uint8_t* mac = pkt->hdr.addr2;
+  int8_t rssi = ppkt->rx_ctrl.rssi;
+
+  // MAC sanity check (ignore multicast/broadcast)
+  if (mac[0] & 0x01) return;
+  // Ignore our own AP MAC
+  uint8_t apMac[6]; esp_wifi_get_mac(WIFI_IF_AP, apMac);
+  if (memcmp(mac, apMac, 6) == 0) return;
+
+  if (rssi < rssiFilter) return;
+
+  uint16_t fc   = pkt->hdr.frame_ctrl;
+  uint8_t ftype = FC_TYPE(fc);
+  uint8_t fsub  = FC_SUBTYPE(fc);
+  bool isDeauth = (ftype == FTYPE_MGMT && fsub == STYPE_DEAUTH);
+
+  // Parse probe request SSID
+  char probeSSID[33] = {0};
+  if (ftype == FTYPE_MGMT && fsub == STYPE_PROBE_REQ) {
+    const uint8_t* ie = ppkt->payload + sizeof(wifi_ieee80211_mac_hdr_t);
+    int remaining = ppkt->rx_ctrl.sig_len - sizeof(wifi_ieee80211_mac_hdr_t);
+    if (remaining > 2 && ie[0] == 0x00) {
+      uint8_t len = ie[1];
+      if (len > 0 && len <= 32 && remaining >= (int)(2 + len)) {
+        memcpy(probeSSID, ie + 2, len);
+        probeSSID[len] = '\0';
+      }
+    }
   }
-  return (uint16_t)(hash % 360);
+
+  if (xSemaphoreTakeFromISR(deviceMutex, NULL) == pdTRUE) {
+    addOrUpdateDevice_ISR(mac, rssi, probeSSID[0] ? probeSSID : nullptr, isDeauth);
+    xSemaphoreGiveFromISR(deviceMutex, NULL);
+  }
 }
 
-// ----------------------------------------------------------------------
-//  Build JSON payload; includes angle collision avoidance so devices
-//  don't overlap on the radar display (nudges by 15-degree steps).
-// ----------------------------------------------------------------------
-String generateDeviceJSON() {
-  DynamicJsonDocument doc(1024);
-  JsonArray devicesArray = doc.createNestedArray("devices");
+// ============================================================
+//  Utility: FNV-1a MAC -> angle
+// ============================================================
+static uint16_t hashMacToAngle(const uint8_t* mac) {
+  uint32_t h = 2166136261u;
+  for (int i = 0; i < 6; i++) { h ^= mac[i]; h *= 16777619u; }
+  return (uint16_t)(h % 360);
+}
 
-  // Track which degree slots are already occupied this frame
-  bool usedAngles[360] = {false};
+// ============================================================
+//  JSON builder
+// ============================================================
+static String generateJSON() {
+  JsonDocument doc;
+  JsonArray devArr = doc["devices"].to<JsonArray>();
 
+  bool usedAngles[360] = {};
+  unsigned long now = millis();
+
+  xSemaphoreTake(deviceMutex, portMAX_DELAY);
   for (int i = 0; i < deviceCount; i++) {
-    if (millis() - devices[i].lastSeen < 10000) {   // only devices seen in last 10s
-      JsonObject device = devicesArray.createNestedObject();
+    WiFiDevice& d = devices[i];
+    if (now - d.lastSeen > DEVICE_TIMEOUT_MS) continue;
 
-      char macStr[18];
-      snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-               devices[i].mac[0], devices[i].mac[1], devices[i].mac[2],
-               devices[i].mac[3], devices[i].mac[4], devices[i].mac[5]);
-      device["mac"] = macStr;
+    JsonObject obj = devArr.add<JsonObject>();
 
-      // Convert RSSI to rough distance (meters) using free-space path loss model
-      float distance = exp((float)(-devices[i].rssi - 45) / 20.0);
-      if (distance > MAX_DISTANCE) distance = MAX_DISTANCE;
-      device["distance"] = distance;
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             d.mac[0],d.mac[1],d.mac[2],d.mac[3],d.mac[4],d.mac[5]);
+    obj["mac"]     = macStr;
+    obj["vendor"]  = lookupVendor(d.mac);
+    obj["icon"]    = lookupIcon(d.mac);
+    obj["rssi"]    = d.rssi;
+    obj["packets"] = d.packetCount;
+    obj["deauth"]  = d.deauthSeen;
+    obj["channel"] = (int)currentChannel;
+    if (d.hasSSID) obj["ssid"] = d.ssid;
 
-      // Resolve angle collision: nudge by 15-degree steps if slot is taken
-      uint16_t angle = hashMacToAngle(devices[i].mac);
-      for (int step = 0; step < 24; step++) {
-        uint16_t candidate = (angle + step * 15) % 360;
-        if (!usedAngles[candidate]) {
-          angle = candidate;
-          break;
+    // Distance via log-distance path-loss model
+    float dist = powf(10.0f, (TX_POWER_REF - (float)d.rssi) / (10.0f * PATH_LOSS_N));
+    if (dist > MAX_DISTANCE) dist = MAX_DISTANCE;
+    obj["distance"] = dist;
+
+    // Angle with collision avoidance
+    uint16_t angle = hashMacToAngle(d.mac);
+    for (int s = 0; s < 24; s++) {
+      uint16_t c = (angle + s * 15) % 360;
+      if (!usedAngles[c]) { angle = c; break; }
+    }
+    usedAngles[angle] = true;
+    obj["angle"]    = angle;
+    obj["strength"] = (int)constrain(map(d.rssi, -95, -35, 0, 100), 0, 100);
+
+    // RSSI history
+    JsonArray hist = obj["history"].to<JsonArray>();
+    for (int j = 0; j < d.historyLen; j++) {
+      uint8_t idx = (d.historyIdx - d.historyLen + j + RSSI_HISTORY) % RSSI_HISTORY;
+      hist.add((int)d.rssiHistory[idx]);
+    }
+  }
+  xSemaphoreGive(deviceMutex);
+
+  // Alerts
+  xSemaphoreTake(alertMutex, portMAX_DELAY);
+  JsonArray alArr = doc["alerts"].to<JsonArray>();
+  for (int i = 0; i < alertCount; i++) {
+    uint8_t idx = (alertHead - alertCount + i + MAX_ALERTS) % MAX_ALERTS;
+    alArr.add(alerts[idx].msg);
+  }
+  alertCount = 0;  // clear after send
+  xSemaphoreGive(alertMutex);
+
+  doc["channel"] = (int)currentChannel;
+
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+
+// ============================================================
+//  HTML Dashboard (full rewrite - dark tactical UI)
+// ============================================================
+#include "html_page.h"
+
+// ============================================================
+//  Server / WebSocket
+// ============================================================
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
+               AwsEventType type, void* arg, uint8_t* data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.printf("[WS] Client #%u connected\n", client->id());
+  } else if (type == WS_EVT_DISCONNECT) {
+    Serial.printf("[WS] Client #%u disconnected\n", client->id());
+  } else if (type == WS_EVT_DATA) {
+    // Handle filter command from UI
+    AwsFrameInfo* info = (AwsFrameInfo*)arg;
+    if (info->opcode == WS_TEXT && len > 0) {
+      data[len] = 0;
+      JsonDocument cmd;
+      if (!deserializeJson(cmd, data)) {
+        if (cmd.containsKey("rssiFilter")) {
+          rssiFilter = (int8_t)(int)cmd["rssiFilter"];
+          Serial.printf("[WS] RSSI filter set to %d dBm\n", (int)rssiFilter);
         }
       }
-      usedAngles[angle] = true;
-
-      device["angle"] = angle;
-      device["strength"] = constrain(map(devices[i].rssi, -95, -35, 0, 100), 0, 100);
     }
   }
-
-  String output;
-  serializeJson(doc, output);
-  return output;
 }
 
-void sendRadarData() {
-  String json = generateDeviceJSON();
-  ws.textAll(json);
-}
-
-// ----------------------------------------------------------------------
-//  Promiscuous packet sniffer callback
-// ----------------------------------------------------------------------
-void processWiFiPackets() {
-  esp_wifi_set_promiscuous_rx_cb([](void *buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA && type != WIFI_PKT_MISC) {
-      return;
-    }
-    const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buf;
-    const wifi_ieee80211_packet_t *packet = (wifi_ieee80211_packet_t *)ppkt->payload;
-    uint8_t *mac = (uint8_t *)packet->hdr.addr2;
-    int8_t rssi = ppkt->rx_ctrl.rssi;
-    addOrUpdateDevice(mac, rssi);
-  });
-}
-
-// ----------------------------------------------------------------------
-//  WebSocket event handler
-// ----------------------------------------------------------------------
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
-               void *arg, uint8_t *data, size_t len) {
-  if (type == WS_EVT_CONNECT) {
-    Serial.printf("WebSocket client #%u connected\n", client->id());
-  } else if (type == WS_EVT_DISCONNECT) {
-    Serial.printf("WebSocket client #%u disconnected\n", client->id());
-  }
-}
-
-// ----------------------------------------------------------------------
-//  Arduino entry points
-// ----------------------------------------------------------------------
+// ============================================================
+//  Setup
+// ============================================================
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-  initWiFi();
+  delay(500);
+  Serial.println("\n=== ESP32 Wi-Fi Radar BOOT ===");
 
+  deviceMutex = xSemaphoreCreateMutex();
+  alertMutex  = xSemaphoreCreateMutex();
+
+  // Start AP
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS, HOP_MIN_CH);
+  Serial.printf("[WiFi] AP started  SSID=%s  IP=%s\n",
+                AP_SSID, WiFi.softAPIP().toString().c_str());
+
+  // Promiscuous mode
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_promiscuous_rx_cb(snifferCallback);
+  esp_wifi_set_channel(HOP_MIN_CH, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_max_tx_power(84);
+  Serial.println("[WiFi] Promiscuous mode ON");
+
+  // WebSocket + HTTP
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
-
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/html", HTML_PAGE);
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
+    req->send_P(200, "text/html", HTML_PAGE);
   });
-
   server.begin();
-  processWiFiPackets();
-
-  Serial.println("Setup done.");
+  Serial.println("[HTTP] Server started on port 80");
 }
 
+// ============================================================
+//  Loop - non-blocking timers
+// ============================================================
 void loop() {
-  sendRadarData();
-  delay(1000);   // update every second (adjust as needed)
+  unsigned long now = millis();
+
+  // Channel hopping
+  if (now - lastHop >= HOP_DWELL_MS) {
+    currentChannel = (currentChannel % HOP_MAX_CH) + 1;
+    esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
+    lastHop = now;
+  }
+
+  // Broadcast radar data every 800ms
+  static unsigned long lastSend = 0;
+  if (now - lastSend >= 800) {
+    ws.cleanupClients();
+    if (ws.count() > 0) {
+      String json = generateJSON();
+      ws.textAll(json);
+    }
+    lastSend = now;
+  }
+
+  // Prune timed-out devices from table every 5s
+  static unsigned long lastPrune = 0;
+  if (now - lastPrune >= 5000) {
+    xSemaphoreTake(deviceMutex, portMAX_DELAY);
+    for (int i = 0; i < deviceCount; ) {
+      if (now - devices[i].lastSeen > DEVICE_TIMEOUT_MS) {
+        Serial.printf("[Radar] Pruned device %02X:%02X:%02X:%02X:%02X:%02X\n",
+          devices[i].mac[0],devices[i].mac[1],devices[i].mac[2],
+          devices[i].mac[3],devices[i].mac[4],devices[i].mac[5]);
+        devices[i] = devices[--deviceCount];
+      } else { i++; }
+    }
+    xSemaphoreGive(deviceMutex);
+    lastPrune = now;
+  }
 }
