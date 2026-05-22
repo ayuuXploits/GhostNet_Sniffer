@@ -101,8 +101,9 @@ Install the following via **Sketch → Include Library → Manage Libraries…**
 
 ```
 GhostNet_Sniffer/
-├── esp32_wifi_radar.ino   # Main firmware — setup, loop, sniffer callback, JSON builder
-└── html_page.h            # Embedded HTML/CSS/JS dashboard (included at compile time)
+ ├── main/
+      ├── GhostNet_Sniffer.ino   # Main firmware — setup, loop, sniffer callback, JSON builder
+      └── html_page.h            # Embedded HTML/CSS/JS dashboard (included at compile time)
 ```
 
 > The folder name **must match** the `.ino` filename exactly. Arduino IDE requires this.  
