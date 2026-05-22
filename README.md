@@ -15,6 +15,22 @@ Detects nearby 2.4 GHz Wi-Fi devices, estimates their distance, and visualizes t
 
 ---
 
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Features](#-features)
+- [Hardware Requirements](#-hardware-requirements)
+- [Software & Libraries](#-software--libraries)
+- [Project Structure](#-project-structure)
+- [Getting Started](#-getting-started)
+- [Web Interface](#-web-interface)
+- [How It Works](#-how-it-works)
+- [License & Copyright](#-license--copyright)
+- [Acknowledgements](#-acknowledgements)
+- [Contact](#-contact)
+
+---
+
 ## 📡 Overview
 
 Traditional radar emits signals and listens for echoes. GhostNet_Sniffer flips the concept: it **passively listens** to existing Wi-Fi traffic on the 2.4 GHz band. By analyzing the **Received Signal Strength Indicator (RSSI)** of captured 802.11 packets, it can:
@@ -233,4 +249,3 @@ For permission inquiries, please open an issue on this repository or contact the
 | **Maintainer** | [ayuuXploits] |
 | **Repository** | https://github.com/ayuuXploits/GhostNet_Sniffer |
 | **Issues** | Open a GitHub issue for bug reports or feature requests |
-
