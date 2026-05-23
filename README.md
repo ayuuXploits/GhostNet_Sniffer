@@ -180,6 +180,7 @@ Then open a browser and navigate to:
 
 ```
 http://192.168.4.1
+
 ```
 
 The radar loads instantly. Dots appear as devices are detected. Walk around — distances update in real time.
