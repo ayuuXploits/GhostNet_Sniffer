@@ -107,6 +107,7 @@ No build step required. Open `dashboard/index.html` directly in a browser, or se
 ```bash
 cd dashboard
 python3 -m http.server 8080
+
 ```
 
 Then open `http://localhost:8080` and connect via WebSocket or serial bridge.
