@@ -147,6 +147,7 @@ const float    TX_POWER_REF   = -59.0f;            // RSSI at 1 m — calibrate 
 const float    PATH_LOSS_N    = 2.7f;              // Path-loss exponent (2.0 = free space, 2.7 = indoors)
 const float    MAX_DISTANCE   = 15.0f;             // Distance cap in metres
 const uint32_t DEVICE_TIMEOUT_MS = 30000;          // Remove device after 30 s of silence
+
 ```
 
 ### 4. Select board and port
