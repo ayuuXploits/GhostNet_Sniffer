@@ -100,6 +100,7 @@ Install the following via **Sketch → Include Library → Manage Libraries…**
 ## 📁 Project Structure
 
 ```
+
 GhostNet_Sniffer/
  ├── main/
  │    ├── GhostNet_Sniffer.ino   # Main firmware — setup, loop, sniffer callback, JSON builder
