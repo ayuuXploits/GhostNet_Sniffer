@@ -1,6 +1,4 @@
 #pragma once
-// Auto-generated HTML dashboard page
-// Included by esp32_wifi_radar.ino
 
 const char HTML_PAGE[] PROGMEM = R"ESP32RADAR(
 <!DOCTYPE html>
