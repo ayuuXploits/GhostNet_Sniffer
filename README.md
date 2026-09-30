@@ -175,6 +175,7 @@ Connect your phone or laptop to the Wi-Fi network:
 ```
 SSID:     GhostNet_Radar
 Password: radar12345
+
 ```
 
 Then open a browser and navigate to:
