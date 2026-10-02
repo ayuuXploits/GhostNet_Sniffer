@@ -155,6 +155,7 @@ const uint32_t DEVICE_TIMEOUT_MS = 30000;          // Remove device after 30 s o
 ```
 Tools → Board → ESP32 Dev Module
 Tools → Port → (your ESP32's COM / tty port)
+
 ```
 
 ### 5. Upload
