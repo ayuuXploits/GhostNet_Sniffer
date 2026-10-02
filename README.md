@@ -101,7 +101,7 @@ Install the following via **Sketch → Include Library → Manage Libraries…**
 
 ```
 
-GhostNet_Sniffer/
+GhostNet_Sniffer/ 
  ├── main/
  │    ├── GhostNet_Sniffer.ino   # Main firmware — setup, loop, sniffer callback, JSON builder
  │    └── html_page.h            # Embedded HTML/CSS/JS dashboard (included at compile time)
