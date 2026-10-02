@@ -175,15 +175,12 @@ Connect your phone or laptop to the Wi-Fi network:
 ```
 SSID:     GhostNet_Radar
 Password: radar12345
-
-
 ```
 
 Then open a browser and navigate to:
 
 ```
 http://192.168.4.1
-
 ```
 
 The radar loads instantly. Dots appear as devices are detected. Walk around — distances update in real time.
